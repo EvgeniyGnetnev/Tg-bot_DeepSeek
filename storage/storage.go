@@ -2,11 +2,14 @@ package storage
 
 import (
 	"crypto/sha1"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/EvgeniyGnetnev/Tg-bot_DeepSeek/lib/e"
 )
+
+var ErrNoSavedPages = errors.New("no saved page")
 
 type Storage interface {
 	Save(p *Page) error
