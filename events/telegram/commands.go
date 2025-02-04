@@ -1,17 +1,16 @@
 package telegram
 
 import (
-	"errors"
 	"log"
-	"net/url"
+	"os"
 	"strings"
 
+	"github.com/EvgeniyGnetnev/Tg-bot_DeepSeek/clients/deepseek"
 	"github.com/EvgeniyGnetnev/Tg-bot_DeepSeek/lib/e"
-	"github.com/EvgeniyGnetnev/Tg-bot_DeepSeek/storage"
+	"github.com/joho/godotenv"
 )
 
 const (
-	RndCmd   = "/rnd"
 	HelpCmd  = "/help"
 	StartCmd = "/start"
 )
@@ -21,13 +20,11 @@ func (p *Processor) doCmd(text string, chatID int, username string) error {
 
 	log.Printf("got new command '%s' from '%s'", text, username)
 
-	if isAddCmd(text) {
-		return p.savePage(chatID, text, username)
+	if isQuestion(text) {
+		return p.sendQuestion(chatID, text, username)
 	}
 
 	switch text {
-	case RndCmd:
-		return p.sendRandom(chatID, username)
 	case HelpCmd:
 		return p.sendHelp(chatID)
 	case StartCmd:
@@ -37,51 +34,35 @@ func (p *Processor) doCmd(text string, chatID int, username string) error {
 	}
 }
 
-func (p *Processor) savePage(chatID int, pageURL string, username string) (err error) {
-	defer func() { err = e.WrapIfErr("can't do comand: save page", err) }()
 
-	page := &storage.Page{
-		URL:      pageURL,
-		UserName: username,
-	}
+func (p *Processor) sendQuestion(chatID int, text string, username string) (err error) {
+	defer func() { err = e.WrapIfErr("can't do comand: send question", err) }()
 
-	isExists, err := p.storage.IsExists(page)
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
+        log.Fatal("No .env file found")
+    }
+
+	ds := deepseek.New(
+		os.Getenv("DEEPSEEK_API_KEY"),
+		"https://openrouter.ai/api/v1",
+	)
+
+	if err := p.tg.SendMessage(chatID, "Думаю..."); err != nil {
 		return err
 	}
 
-	if isExists {
-		return p.tg.SendMessage(chatID, msgAlredyExists)
-	}
-
-	if err := p.storage.Save(page); err != nil {
+	answer, err := ds.DoRequest(text)
+	if err != nil{
 		return err
 	}
 
-	if err := p.tg.SendMessage(chatID, msgSaved); err != nil {
+	if err := p.tg.SendMessage(chatID, answer); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (p *Processor) sendRandom(chatID int, username string) (err error){
-	defer func() { err = e.WrapIfErr("can't do command: can't send random", err) }()
-
-	page, err := p.storage.PickRandom(username)
-	if err != nil && !errors.Is(err, storage.ErrNoSavedPages){
-		return err
-	}
-	if errors.Is(err, storage.ErrNoSavedPages){
-		return p.tg.SendMessage(chatID, msgNoSavedPages)
-	}
-
-	if err := p.tg.SendMessage(chatID, page.URL); err != nil {
-		return err
-	}
-
-	return p.storage.Remove(page)
-}
 
 func (p *Processor) sendHelp(chatID int) error {
 	return p.tg.SendMessage(chatID, msgHelp)
@@ -91,12 +72,6 @@ func (p *Processor) sendHello(chatID int) error {
 	return p.tg.SendMessage(chatID, msgHello)
 }
 
-func isAddCmd(text string) bool {
-	return isURL(text)
-}
-
-func isURL(text string) bool {
-	u, err := url.Parse(text)
-
-	return err == nil && u.Host != ""
+func isQuestion(text string) bool {
+	return len(text) > 0 && text[0] != '/'
 }
